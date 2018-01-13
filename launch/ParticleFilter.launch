@@ -1,0 +1,19 @@
+
+<launch>
+
+	<include file="$(find ta_lab1)/launch/map_server.launch"/>
+
+	<arg name="scan_topic" default="/scan"/>
+	<arg name="odometry_topic" default="/vesc/odom"/>
+	<arg name="laser_ray_step" default="18"/>
+	<arg name="max_particles" default="4000"/>
+	
+	<node pkg="ta_lab1" type="ParticleFilter.py" name="Particle_filter" output="screen">
+		<param name="scan_topic" value="$(arg scan_topic)"/>
+		<param name="odometry_topic" value="$(arg odometry_topic)"/>
+		<param name="laser_ray_step" value="$(arg laser_ray_step)"/>
+		<param name="max_particles" value="$(arg max_particles)"/>
+		<param name="max_viz_particles" value="60"/>
+
+	</node>
+</launch>
