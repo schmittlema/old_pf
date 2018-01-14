@@ -7,10 +7,12 @@ import utils as Utils
 import tf.transformations
 import tf
 
+from std_msgs.msg import String, Header, Float32MultiArray, Float64
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetMap
 from geometry_msgs.msg import PoseStamped, PoseArray, PoseWithCovarianceStamped, PointStamped
+from vesc_msgs.msg import VescStateStamped
 
 from SensorModel import SensorModel
 from OdometryModel import OdometryModel
@@ -32,6 +34,12 @@ class ParticleFilter():
 
     self.weights = np.ones(self.MAX_PARTICLES) / float(self.MAX_PARTICLES)
 
+    self.last_servo_cmd  = None
+    self.last_vesc_stamp = None
+    self.SPEED_TO_ERPM_OFFSET = float(rospy.get_param("/vesc/speed_to_erpm_offset"))
+    self.SPEED_TO_ERPM_GAIN   = float(rospy.get_param("/vesc/speed_to_erpm_gain"))
+    self.STEERING_TO_SERVO_OFFSET = float(rospy.get_param("/vesc/steering_angle_to_servo_offset"))
+    self.STEERING_TO_SERVO_GAIN   = float(rospy.get_param("/vesc/steering_angle_to_servo_gain"))
     self.last_pose = None
     self.last_stamp = None
     self.odometry_model = OdometryModel()
@@ -40,6 +48,7 @@ class ParticleFilter():
     print("Getting map from service: ", map_service_name)
     rospy.wait_for_service(map_service_name)
     map_msg = rospy.ServiceProxy(map_service_name, GetMap)().map
+    self.last_laser = None
     self.sensor_model = SensorModel(map_msg)
     self.map_info = map_msg.info
 
@@ -51,14 +60,28 @@ class ParticleFilter():
 
     print "Initializing particles"
     self.initialize_global()
-
+   
     print 'Creating publishers'
-    self.pose_pub      = rospy.Publisher("/pf/viz/inferred_pose", PoseStamped, queue_size = 1)
-    self.particle_pub  = rospy.Publisher("/pf/viz/particles", PoseArray, queue_size = 1)
+    self.pose_pub      = rospy.Publisher("/pf/ta/viz/inferred_pose", PoseStamped, queue_size = 1)
+    self.particle_pub  = rospy.Publisher("/pf/ta/viz/particles", PoseArray, queue_size = 1)
     self.pub_tf = tf.TransformBroadcaster()
+    self.pub_laser     = rospy.Publisher("/pf/ta/viz/scan", LaserScan, queue_size = 1)
+
+    ''' HACK VIEW INITIAL DISTRIBUTION'''
+    '''
+    self.MAX_VIZ_PARTICLES = 1000
+    while not rospy.is_shutdown():
+      self.visualize()
+      rospy.sleep(0.2)
+    '''
+    
     print 'Creating subscribers'
     self.laser_sub = rospy.Subscriber(rospy.get_param("~scan_topic", "/scan"), LaserScan, self.lidarCB, queue_size=1)
-    self.odom_sub  = rospy.Subscriber(rospy.get_param("~odometry_topic", "/odom"), Odometry, self.odomCB, queue_size=1)
+    #self.odom_sub  = rospy.Subscriber(rospy.get_param("~odometry_topic", "/odom"), Odometry, self.odomCB, queue_size=1)
+    self.vesc_state_sub = rospy.Subscriber(rospy.get_param("~vesc_state_topic", "/vesc/sensors/core"), VescStateStamped,
+                                       self.vescCB, queue_size=1)
+    self.servo_pos_sub  = rospy.Subscriber(rospy.get_param("~servo_pos_topic", "/vesc/sensors/servo_position_command"), Float64,
+                                       self.servoCB, queue_size=1)
     self.pose_sub  = rospy.Subscriber("/initialpose", PoseWithCovarianceStamped, self.clicked_pose_cb, queue_size=1)
     self.click_sub = rospy.Subscriber("/clicked_point", PointStamped, self.clicked_pose_cb, queue_size=1)
 
@@ -69,25 +92,6 @@ class ParticleFilter():
     indices = np.arange(0, len(permissible_x), step)[:self.MAX_PARTICLES]
 
     permissible_states = np.zeros((self.MAX_PARTICLES,3))
-    permissible_states[:,0] = permissible_x[indices]
-    permissible_states[:,1] = permissible_y[indices]
-    permissible_states[:,2] = np.random.random(self.MAX_PARTICLES) * np.pi * 2.0
-
-    Utils.map_to_world(permissible_states, self.map_info)
-    self.particles = permissible_states
-    self.weights[:] = 1.0 / self.MAX_PARTICLES
-  '''
-  def initialize_global(self):
-    '''
-    Spread the particle distribution over the permissible region of the state space.
-    '''
-    print "GLOBAL INITIALIZATION"
-    # randomize over grid coordinate space
-
-    permissible_x, permissible_y = np.where(self.permissible_region == 1)
-    indices = np.random.randint(0, len(permissible_x), size=self.MAX_PARTICLES)
-
-    permissible_states = np.zeros((self.MAX_PARTICLES,3))
     permissible_states[:,0] = permissible_y[indices]
     permissible_states[:,1] = permissible_x[indices]
     permissible_states[:,2] = np.random.random(self.MAX_PARTICLES) * np.pi * 2.0
@@ -95,15 +99,37 @@ class ParticleFilter():
     Utils.map_to_world(permissible_states, self.map_info)
     self.particles = permissible_states
     self.weights[:] = 1.0 / self.MAX_PARTICLES
+  '''
+  
+  def initialize_global(self):
 
+    print "GLOBAL INITIALIZATION"
+    # randomize over grid coordinate space
+
+    permissible_x, permissible_y = np.where(self.permissible_region == 1)
+    
+    angle_step = 4
+    #indices = np.random.randint(0, len(permissible_x), size=self.MAX_PARTICLES/angle_step)
+    step = 4*len(permissible_x)/self.MAX_PARTICLES
+    indices = np.arange(0, len(permissible_x), step)[:(self.MAX_PARTICLES/4)]
+    permissible_states = np.zeros((self.MAX_PARTICLES,3))
+    for i in xrange(angle_step):
+      permissible_states[i*(self.MAX_PARTICLES/angle_step):(i+1)*(self.MAX_PARTICLES/angle_step),0] = permissible_y[indices]
+      permissible_states[i*(self.MAX_PARTICLES/angle_step):(i+1)*(self.MAX_PARTICLES/angle_step),1] = permissible_x[indices]
+      permissible_states[i*(self.MAX_PARTICLES/angle_step):(i+1)*(self.MAX_PARTICLES/angle_step),2] = i*(2*np.pi / angle_step)#np.random.random(self.MAX_PARTICLES) * np.pi * 2.0  
+     
+    Utils.map_to_world(permissible_states, self.map_info)
+    self.particles = permissible_states
+    self.weights[:] = 1.0 / self.MAX_PARTICLES
+  
+  
   def publish_tf(self,pose, stamp=None):
     """ Publish a tf for the car. This tells ROS where the car is with respect to the map. """
     if stamp == None:
       stamp = rospy.Time.now()
 
-    # this may cause issues with the TF tree. If so, see the below code.
     self.pub_tf.sendTransform((pose[0],pose[1],0),tf.transformations.quaternion_from_euler(0, 0, pose[2]), 
-               stamp , "/laser", "/map")
+               stamp , "/ta_laser", "/map")
 
   def lidarCB(self, msg):
     '''
@@ -128,6 +154,7 @@ class ParticleFilter():
 
     self.inferred_pose = self.expected_pose()
     self.last_stamp = rospy.Time.now()
+    self.last_laser = msg
     self.publish_tf(self.inferred_pose, self.last_stamp)
     self.visualize()
 
@@ -157,6 +184,27 @@ class ParticleFilter():
 
 
     self.last_pose = pose
+
+  def servoCB(self, msg):
+    self.last_servo_cmd = msg.data # Just update servo command
+
+  def vescCB(self, msg):
+    if self.last_servo_cmd is None:
+      return # Need this
+    curr_speed = (msg.state.speed - self.SPEED_TO_ERPM_OFFSET) / self.SPEED_TO_ERPM_GAIN
+    curr_steering_angle = (self.last_servo_cmd - self.STEERING_TO_SERVO_OFFSET) / self.STEERING_TO_SERVO_GAIN
+    #self.latest_ctrls.append(np.array([curr_speed, curr_steering_angle]))
+    #self.latest_ctrl_stamps.append(msg.header.stamp)
+
+    if self.last_vesc_stamp is None:
+      print ("Vesc callback called for first time....")
+      self.last_vesc_stamp = msg.header.stamp
+
+   
+    # Run motion model update for kinematic car model only
+    dt = (msg.header.stamp - self.last_vesc_stamp).to_sec()
+    self.odometry_model.apply_motion_model(proposal_dist=self.particles, action=[curr_speed, curr_steering_angle, dt])
+    self.last_vesc_stamp = msg.header.stamp
 
   def clicked_pose_cb(self, msg):
     '''
@@ -196,6 +244,11 @@ class ParticleFilter():
         self.publish_particles(self.particles[proposal_indices,:])
       else:
         self.publish_particles(self.particles)
+        
+    if self.pub_laser.get_num_connections() > 0 and isinstance(self.last_laser, LaserScan):
+      self.last_laser.header.frame_id = "/ta_laser"
+      self.last_laser.header.stamp = rospy.Time.now()
+      self.pub_laser.publish(self.last_laser)
 
   def publish_particles(self, particles):
     pa = PoseArray()
