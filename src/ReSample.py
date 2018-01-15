@@ -14,18 +14,19 @@ class ReSampler:
       self.state_lock = state_lock
   
   def resample_naiive(self):
-    self.state_lock.acquire()
     # Use np.random.choice to re-sample 
     if self.particle_indices is None:
       self.particle_indices = np.arange(self.particles.shape[0])
     proposal_indices = np.random.choice(self.particle_indices, self.particles.shape[0], p=self.weights)
+
+    self.state_lock.acquire()
     self.particles[:] = self.particles[proposal_indices,:]    
     self.weights[:] = 1.0 / self.particles.shape[0]
     
     self.state_lock.release()
   
   def resample_low_variance(self):
-    self.state_lock.acquire()
+    
     # Implement low variance re-sampling
     if self.step_array is None:
       self.step_array = (1.0/self.particles.shape[0]) * np.array(range(0,self.particles.shape[0]), dtype=np.float32)
@@ -33,6 +34,8 @@ class ReSampler:
     vals    = initval + self.step_array
     cumwt   = np.cumsum(self.weights)
     proposal_indices = np.searchsorted(cumwt, vals, side='left')
+    
+    self.state_lock.acquire()
     self.particles[:] = self.particles[proposal_indices,:] 
     self.weights[:] = 1.0 / self.particles.shape[0]
     

@@ -43,7 +43,7 @@ class SensorModel:
     '''
     Initializes reused buffers, and stores the relevant laser scanner data for later use.
     '''
-    self.state_lock.acquire()
+
     
     if not isinstance(self.laser_angles, np.ndarray):
         self.laser_angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
@@ -61,7 +61,8 @@ class SensorModel:
     # Keep efficiency in mind, including by caching certain things that won't change across future iterations of this callback
     
     obs = (np.copy(self.downsampled_ranges).astype(np.float32), self.downsampled_angles) 
-    
+
+    self.state_lock.acquire()    
     self.apply_sensor_model(self.particles, obs, self.weights)
     self.weights /= np.sum(self.weights)
     

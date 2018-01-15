@@ -16,9 +16,7 @@ class OdometryMotionModel:
     else:
       self.state_lock = state_lock
     
-  def motion_cb(self, msg):
-    self.state_lock.acquire()
-    
+  def motion_cb(self, msg):    
     # Compute the control from the msg and last_pose
     position = np.array([msg.pose.pose.position.x,
 		         msg.pose.pose.position.y])
@@ -36,8 +34,6 @@ class OdometryMotionModel:
       self.apply_motion_model(self.particles, control)
 
     self.last_pose = pose
-    
-    self.state_lock.release()
     
   def apply_motion_model(self, proposal_dist, control):
     '''
@@ -57,6 +53,7 @@ class OdometryMotionModel:
     cosines = np.cos(proposal_dist[:,2])
     sines = np.sin(proposal_dist[:,2])
 
+    self.state_lock.acquire()
     proposal_dist[:,0] += cosines*control[0] - sines*control[1]
     proposal_dist[:,1] += sines*control[0] + cosines*control[1]
     proposal_dist[:,2] += control[2]
@@ -65,6 +62,7 @@ class OdometryMotionModel:
     proposal_dist[:,0] += np.random.normal(loc=0.0,scale=add_rand,size=proposal_dist.shape[0])
     proposal_dist[:,1] += np.random.normal(loc=0.0,scale=add_rand*0.5,size=proposal_dist.shape[0])
     proposal_dist[:,2] += np.random.normal(loc=0.0,scale=0.25,size=proposal_dist.shape[0])    
+    self.state_lock.release()
 
 class KinematicMotionModel:
 
@@ -91,7 +89,6 @@ class KinematicMotionModel:
     self.last_servo_cmd = msg.data # Just update servo command
 
   def motion_cb(self, msg):
-    self.state_lock.acquire()
     
     if self.last_servo_cmd is None:
       return
@@ -107,22 +104,10 @@ class KinematicMotionModel:
     dt = (msg.header.stamp - self.last_vesc_stamp).to_sec()
     self.apply_motion_model(proposal_dist=self.particles, control=[curr_speed, curr_steering_angle, dt])
     
-    self.last_vesc_stamp = msg.header.stamp
-    
-    self.state_lock.release()
-    
+    self.last_vesc_stamp = msg.header.stamp    
+   
   def apply_motion_model(self, proposal_dist, control):
-    '''
-    The motion model applies the odometry to the particle distribution. Since there the odometry
-    data is inaccurate, the motion model mixes in gaussian noise to spread out the distribution.
-    Vectorized motion model. Computing the motion model over all particles is thousands of times
-    faster than doing it for each particle individually due to vectorization and reduction in
-    function call overhead
     
-    TODO this could be better, but it works for now
-        - fixed random noise is not very realistic
-        - ackermann model provides bad estimates at high speed
-    '''
     # Update the proposal distribution by applying the control to each particle
     
     v, delta, dt = control
@@ -132,7 +117,9 @@ class KinematicMotionModel:
     dy = v * np.sin(proposal_dist[:, 2]) * dt
     #dtheta = ((v / self.CAR_LENGTH) * sin2beta) * dt  # Scale by dt
     dtheta = v*(np.tan(delta) / 0.25)* dt
+    
+    self.state_lock.acquire()
     proposal_dist[:, 0] += dx + np.random.normal(loc=0.0, scale=0.05, size=proposal_dist.shape[0])
     proposal_dist[:, 1] += dy + np.random.normal(loc=0.0, scale=0.025, size=proposal_dist.shape[0])
     proposal_dist[:, 2] += dtheta + np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
-    
+    self.state_lock.release()
