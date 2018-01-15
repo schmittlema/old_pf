@@ -9,48 +9,6 @@ from geometry_msgs.msg import Point, Pose, PoseStamped, PoseArray, Quaternion, P
 import tf.transformations
 import tf
 import matplotlib.pyplot as plt
-import time
-
-class CircularArray(object):
-    """ Simple implementation of a circular array.
-        You can append to it any number of times but only "size" items will be kept
-    """
-    def __init__(self, size):
-        self.arr = np.zeros(size)
-        self.ind = 0
-        self.num_els = 0
-
-    def append(self, value):
-        if self.num_els < self.arr.shape[0]:
-            self.num_els += 1
-        self.arr[self.ind] = value
-        self.ind = (self.ind + 1) % self.arr.shape[0]
-
-    def mean(self):
-        return np.mean(self.arr[:self.num_els])
-
-    def median(self):
-        return np.median(self.arr[:self.num_els])
-
-class Timer:
-    """ Simple helper class to compute the rate at which something is called.
-        
-        "smoothing" determines the size of the underlying circular array, which averages
-        out variations in call rate over time.
-        use timer.tick() to record an event
-        use timer.fps() to report the average event rate.
-    """
-    def __init__(self, smoothing):
-        self.arr = CircularArray(smoothing)
-        self.last_time = time.time()
-
-    def tick(self):
-        t = time.time()
-        self.arr.append(1.0 / (t - self.last_time))
-        self.last_time = t
-
-    def fps(self):
-        return self.arr.mean()
 
 def angle_to_quaternion(angle):
     """Convert an angle in radians into a quaternion _message_."""
@@ -95,20 +53,6 @@ def point(npt):
 def points(arr):
     return map(point, arr)
 
-# converts map space coordinates to world space coordinates
-def map_to_world_slow(x,y,t,map_info):
-    scale = map_info.resolution
-    angle = quaternion_to_angle(map_info.origin.orientation)
-    rot = rotation_matrix(angle)
-    trans = np.array([[map_info.origin.position.x],
-                      [map_info.origin.position.y]])
-
-    map_c = np.array([[x],
-                      [y]])
-    world = (rot*map_c) * scale + trans
-
-    return world[0,0],world[1,0],t+angle
-
 def map_to_world(poses,map_info):
     scale = map_info.resolution
     angle = quaternion_to_angle(map_info.origin.orientation)
@@ -151,15 +95,3 @@ def world_to_map(poses, map_info):
     poses[:,1] = s*temp       + c*poses[:,1]
     poses[:,2] += angle
 
-# converts world space coordinates to map space coordinates
-def world_to_map_slow(x,y,t, map_info):
-    scale = map_info.resolution
-    angle = quaternion_to_angle(map_info.origin.orientation)
-    rot = rotation_matrix(-angle)
-    trans = np.array([[map_info.origin.position.x],
-                      [map_info.origin.position.y]])
-
-    world = np.array([[x],
-                      [y]])
-    map_c = rot*((world - trans) / float(scale))
-    return map_c[0,0],map_c[1,0],t-angle

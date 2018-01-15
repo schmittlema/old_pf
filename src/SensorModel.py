@@ -4,7 +4,6 @@ import numpy as np
 import range_libc
 import time
 
-MAX_RANGE_METERS = 5.6
 THETA_DISCRETIZATION = 112
 INV_SQUASH_FACTOR = 2.2
 
@@ -16,13 +15,40 @@ Z_HIT = 0.75
 
 class SensorModel:
 	
-  def __init__(self, map_msg):
+  def __init__(self, map_msg, particles, weights):
+    self.particles = particles
+    self.weights = weights
+  
+    self.LASER_RAY_STEP = int(rospy.get_param("~laser_ray_step"))
+    self.MAX_RANGE_METERS = float(rospy.get_param("~max_range_meters"))
+    
     oMap = range_libc.PyOMap(map_msg)
-    max_range_px = int(MAX_RANGE_METERS / map_msg.info.resolution)
+    max_range_px = int(self.MAX_RANGE_METERS / map_msg.info.resolution)
     self.range_method = range_libc.PyCDDTCast(oMap, max_range_px, THETA_DISCRETIZATION)
     self.range_method.set_sensor_model(self.precompute_sensor_model(max_range_px))
+    self.laser_angles = None
+    self.downsampled_angles = None
     self.first_sensor_update = True
+    self.do_resample = False
+    
+  def lidar_cb(self, msg):
+    '''
+    Initializes reused buffers, and stores the relevant laser scanner data for later use.
+    '''
+    if not isinstance(self.laser_angles, np.ndarray):
+        self.laser_angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
+        self.downsampled_angles = np.copy(self.laser_angles[0::self.LASER_RAY_STEP]).astype(np.float32)
 
+    self.downsampled_ranges = np.array(msg.ranges[::self.LASER_RAY_STEP])
+    self.downsampled_ranges[np.isnan(self.downsampled_ranges)] = self.MAX_RANGE_METERS
+
+    obs = (np.copy(self.downsampled_ranges).astype(np.float32), self.downsampled_angles)
+    self.apply_sensor_model(self.particles, obs, self.weights)
+    self.weights /= np.sum(self.weights)
+
+    self.last_laser = msg
+    self.do_resample = True
+    
   def precompute_sensor_model(self, max_range_px):
 
     table_width = int(max_range_px) + 1
