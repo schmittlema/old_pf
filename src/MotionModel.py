@@ -16,8 +16,8 @@ class OdometryMotionModel:
     else:
       self.state_lock = state_lock
     
-  def motion_cb(self, msg)
-    self.state_lock.acquire(blocking=True)
+  def motion_cb(self, msg):
+    self.state_lock.acquire()
     
     # Compute the control from the msg and last_pose
     position = np.array([msg.pose.pose.position.x,
@@ -91,7 +91,7 @@ class KinematicMotionModel:
     self.last_servo_cmd = msg.data # Just update servo command
 
   def motion_cb(self, msg):
-    self.state_lock.acquire(blocking=True)
+    self.state_lock.acquire()
     
     if self.last_servo_cmd is None:
       return

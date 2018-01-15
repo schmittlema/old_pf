@@ -82,7 +82,7 @@ class ParticleFilter():
     # Subscribe to the '/initialpose' topic. Publised by RVIZ. See clicked_pose_cb function in this file for more info
     self.pose_sub  = rospy.Subscriber("/initialpose", PoseWithCovarianceStamped, self.clicked_pose_cb, queue_size=1)
     #self.click_sub = rospy.Subscriber("/clicked_point", PointStamped, self.clicked_pose_cb, queue_size=1)
-
+    print('Initialization complete')
   '''
   def initialize_global(self):
     permissible_x, permissible_y = np.where(self.permissible_region == 1)
@@ -135,7 +135,7 @@ class ParticleFilter():
   # Reinitialize your particles and weights according to the received initial pose
   # Remember to apply a reasonable amount of Gaussian noise to each particle's pose
   def clicked_pose_cb(self, msg):
-    self.state_lock.acquire(blocking=True)
+    self.state_lock.acquire()
     pose = msg.pose.pose
     print "SETTING POSE"
     print pose
@@ -153,6 +153,7 @@ class ParticleFilter():
   #     Sample so that particles with higher weights are more likely to be sampled.
   def visualize(self):
     print 'Visualizing...'
+    self.state_lock.acquire()
     self.inferred_pose = self.expected_pose()
     self.publish_tf(self.inferred_pose, rospy.Time.now())
     
@@ -177,6 +178,7 @@ class ParticleFilter():
       self.sensor_model.last_laser.header.frame_id = "/ta_laser"
       self.sensor_model.last_laser.header.stamp = rospy.Time.now()
       self.pub_laser.publish(self.sensor_model.last_laser)
+    self.state_lock.release()
 
   def publish_particles(self, particles):
     pa = PoseArray()

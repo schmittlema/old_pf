@@ -1,4 +1,4 @@
-import ropsy
+import rospy
 import numpy as np
 
 class ReSampler:
@@ -14,7 +14,7 @@ class ReSampler:
       self.state_lock = state_lock
   
   def resample_naiive(self):
-    self.state_lock.acquire(blocking=True)
+    self.state_lock.acquire()
     # Use np.random.choice to re-sample 
     if self.particle_indices is None:
       self.particle_indices = np.arange(self.particles.shape[0])
@@ -25,7 +25,7 @@ class ReSampler:
     self.state_lock.release()
   
   def resample_low_variance(self):
-    self.state_lock.acquire(blocking=True)
+    self.state_lock.acquire()
     # Implement low variance re-sampling
     if self.step_array is None:
       self.step_array = (1.0/self.particles.shape[0]) * np.array(range(0,self.particles.shape[0]), dtype=np.float32)

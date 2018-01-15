@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
+import rospy
 import range_libc
 import time
 from threading import Lock
@@ -32,6 +33,8 @@ class SensorModel:
     max_range_px = int(self.MAX_RANGE_METERS / map_msg.info.resolution) # The max range in pixels of the laser
     self.range_method = range_libc.PyCDDTCast(oMap, max_range_px, THETA_DISCRETIZATION) # The range method that will be used for ray casting
     self.range_method.set_sensor_model(self.precompute_sensor_model(max_range_px)) # Load the sensor model expressed as a table
+    self.queries = None
+    self.ranges = None
     self.laser_angles = None # The angles of each ray
     self.downsampled_angles = None # The angles of the downsampled rays 
     self.do_resample = False # Set so that outside code can know that it's time to resample
@@ -40,7 +43,7 @@ class SensorModel:
     '''
     Initializes reused buffers, and stores the relevant laser scanner data for later use.
     '''
-    self.state_lock.acquire(blocking=True)
+    self.state_lock.acquire()
     
     if not isinstance(self.laser_angles, np.ndarray):
         self.laser_angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
