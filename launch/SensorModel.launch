@@ -1,0 +1,12 @@
+<launch>
+
+	<include file="$(find ta_lab1)/launch/MapServer.launch"/>
+
+	<arg name="laser_ray_step" default="18"/>
+	<arg name="max_range_meters" default="5.6" />
+	
+	<node pkg="ta_lab1" type="SensorModel.py" name="sensor_model" output="screen">
+		<param name="laser_ray_step" value="$(arg laser_ray_step)"/>
+		<param name="max_range_meters" value="$(arg max_range_meters)" />
+	</node> 
+</launch>

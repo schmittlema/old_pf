@@ -5,6 +5,8 @@ import numpy as np
 import utils as Utils
 from std_msgs.msg import Float64
 from threading import Lock
+from vesc_msgs.msg import VescStateStamped
+import matplotlib.pyplot as plt
 
 class OdometryMotionModel:
 
@@ -88,17 +90,22 @@ class KinematicMotionModel:
                                        
 
   def servo_cb(self, msg):
+    #print 'In servo_cb'
     self.last_servo_cmd = msg.data # Just update servo command
 
   def motion_cb(self, msg):
     self.state_lock.acquire()
+    #print 'In motion cb'
     if self.last_servo_cmd is None:
+      self.state_lock.release()
       return
 
     if self.last_vesc_stamp is None:
       print ("Vesc callback called for first time....")
       self.last_vesc_stamp = msg.header.stamp
-
+      self.state_lock.release()
+      return
+      
     # Convert raw msgs to controls
     # Note that control = (raw_msg_val - offset_param) / gain_param
     curr_speed = (msg.state.speed - self.SPEED_TO_ERPM_OFFSET) / self.SPEED_TO_ERPM_GAIN
@@ -114,14 +121,23 @@ class KinematicMotionModel:
     # Update the proposal distribution by applying the control to each particle
     
     v, delta, dt = control
-    beta = np.arctan(0.5 * np.tan(delta))
-    sin2beta = np.sin(2 * beta)
     
-    if np.abs(beta) < 1e-2:
+    if np.abs(delta) < 1e-2:
+        v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
+        delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+        
+        beta = np.arctan(0.5 * np.tan(delta))
+        sin2beta = np.sin(2 * beta)
         dx = v * np.cos(proposal_dist[:, 2]) * dt
         dy = v * np.sin(proposal_dist[:, 2]) * dt
         dtheta = 0
     else:
+        #print 'Updating particles'
+        v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
+        delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+        
+        beta = np.arctan(0.5 * np.tan(delta))
+        sin2beta = np.sin(2 * beta)
         dtheta = ((v / self.CAR_LENGTH) * sin2beta) * dt
         dx = (self.CAR_LENGTH/sin2beta)*(np.sin(proposal_dist[:,2]+dtheta)-np.sin(proposal_dist[:,2]))        
         dy = (self.CAR_LENGTH/sin2beta)*(-1*np.cos(proposal_dist[:,2]+dtheta)+np.cos(proposal_dist[:,2]))
@@ -131,7 +147,55 @@ class KinematicMotionModel:
     #dtheta = ((v / self.CAR_LENGTH) * sin2beta) * dt  # Scale by dt
     #dtheta = v*(np.tan(delta) / 0.25)* dt
     
-    proposal_dist[:, 0] += dx + np.random.normal(loc=0.0, scale=0.05, size=proposal_dist.shape[0])
-    proposal_dist[:, 1] += dy + np.random.normal(loc=0.0, scale=0.025, size=proposal_dist.shape[0])
-    proposal_dist[:, 2] += dtheta + np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+    proposal_dist[:, 0] += dx #+ np.random.normal(loc=0.0, scale=0.05, size=proposal_dist.shape[0])
+    proposal_dist[:, 1] += dy #+ np.random.normal(loc=0.0, scale=0.025, size=proposal_dist.shape[0])
+    proposal_dist[:, 2] += dtheta #+ np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
     
+    #print 'Updated particles'
+    
+if __name__ == '__main__':
+  MAX_PARTICLES = 1000
+  
+  rospy.init_node("odometry_model", anonymous=True) # Initialize the node
+  particles = np.zeros((MAX_PARTICLES,3))
+  
+  # Going to fake publish controls
+  servo_pub = rospy.Publisher('/vesc/sensors/servo_position_command', Float64, queue_size=1)
+  vesc_state_pub = rospy.Publisher('/vesc/sensors/core', VescStateStamped, queue_size=1)
+  
+  kmm = KinematicMotionModel(particles)
+  motion_sub = rospy.Subscriber(rospy.get_param("~motion_topic", "/vesc/sensors/core"), VescStateStamped, kmm.motion_cb, queue_size=1)
+  
+  # Give time to get setup
+  rospy.sleep(1.0)
+  
+  # Send initial position and vesc state
+  vesc_msg = VescStateStamped()
+  vesc_msg.header.stamp = rospy.Time.now()
+  vesc_msg.state.speed = 0.25
+  
+  servo_msg = Float64()
+  servo_msg.data = 0.1
+  
+  servo_pub.publish(servo_msg)
+  rospy.sleep(1.0)
+  vesc_state_pub.publish(vesc_msg)
+  
+  rospy.sleep(1.0/20)
+  
+  vesc_msg.header.stamp = rospy.Time.now()
+  vesc_state_pub.publish(vesc_msg)
+  
+  rospy.sleep(1.0)
+  
+  kmm.state_lock.acquire()
+  # Visualize particles
+  plt.xlim(-0.05, 0.35)
+  plt.ylim(-0.1, 0.1225)
+  plt.xlabel('x')
+  plt.ylabel('y')
+  plt.title('Left Turn - Velocity Noise')
+  plt.scatter([0],[0])
+  plt.scatter(particles[:,0], particles[:,1])
+  plt.show()
+  kmm.state_lock.release()

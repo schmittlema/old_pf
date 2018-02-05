@@ -1,0 +1,10 @@
+<launch>
+
+  <param name="/vesc/speed_to_erpm_offset" value="0.0"/>
+	<param name="/vesc/speed_to_erpm_gain" value="1.0"/>
+	<param name="/vesc/steering_angle_to_servo_offset" value="0.0"/>
+	<param name="/vesc/steering_angle_to_servo_gain" value="1.0"/>
+
+	<node pkg="ta_lab1" type="MotionModel.py" name="motion_model" output="screen"/>
+	
+</launch>
