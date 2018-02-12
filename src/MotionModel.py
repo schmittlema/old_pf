@@ -8,6 +8,14 @@ from threading import Lock
 from vesc_msgs.msg import VescStateStamped
 import matplotlib.pyplot as plt
 
+KM_V_NOISE = 0.005
+KM_DELTA_NOISE = 0.05
+KM_X_FIX_NOISE = 0.005
+KM_Y_FIX_NOISE = 0.005
+KM_THETA_FIX_NOISE = 0.05
+KM_X_SCALE_NOISE = 0.05
+KM_Y_SCALE_NOISE = 0.05
+
 class OdometryMotionModel:
 
   def __init__(self, particles, state_lock=None):
@@ -62,7 +70,7 @@ class OdometryMotionModel:
     proposal_dist[:,1] += sines*control[0] + cosines*control[1]
     proposal_dist[:,2] += control[2]
 
-    add_rand = 0.01
+    add_rand = 0.05
     proposal_dist[:,0] += np.random.normal(loc=0.0,scale=add_rand,size=proposal_dist.shape[0])
     proposal_dist[:,1] += np.random.normal(loc=0.0,scale=add_rand*0.5,size=proposal_dist.shape[0])
     proposal_dist[:,2] += np.random.normal(loc=0.0,scale=0.25,size=proposal_dist.shape[0])    
@@ -119,12 +127,17 @@ class KinematicMotionModel:
   def apply_motion_model(self, proposal_dist, control):
     
     # Update the proposal distribution by applying the control to each particle
-    
+     
     v, delta, dt = control
-    
+    v_mag = abs(v)
+    v += np.random.normal(loc=0.0, scale=KM_V_NOISE, size=proposal_dist.shape[0])
+   
     if np.abs(delta) < 1e-2:
-        v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
-        delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+        #v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
+        #delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+
+        #v += np.random.normal(loc=0.0, scale=1.0, size=proposal_dist.shape[0])
+        #delta += np.random.normal(loc=0.0, scale=2.5, size=proposal_dist.shape[0])
         
         beta = np.arctan(0.5 * np.tan(delta))
         sin2beta = np.sin(2 * beta)
@@ -133,9 +146,9 @@ class KinematicMotionModel:
         dtheta = 0
     else:
         #print 'Updating particles'
-        v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
-        delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
-        
+        #v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
+        #delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+    	delta += np.random.normal(loc=0.0, scale=KM_DELTA_NOISE, size=proposal_dist.shape[0])    
         beta = np.arctan(0.5 * np.tan(delta))
         sin2beta = np.sin(2 * beta)
         dtheta = ((v / self.CAR_LENGTH) * sin2beta) * dt
@@ -147,9 +160,9 @@ class KinematicMotionModel:
     #dtheta = ((v / self.CAR_LENGTH) * sin2beta) * dt  # Scale by dt
     #dtheta = v*(np.tan(delta) / 0.25)* dt
     
-    proposal_dist[:, 0] += dx #+ np.random.normal(loc=0.0, scale=0.05, size=proposal_dist.shape[0])
-    proposal_dist[:, 1] += dy #+ np.random.normal(loc=0.0, scale=0.025, size=proposal_dist.shape[0])
-    proposal_dist[:, 2] += dtheta #+ np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
+    proposal_dist[:, 0] += dx + np.random.normal(loc=0.0, scale=KM_X_FIX_NOISE+KM_X_SCALE_NOISE*v_mag, size=proposal_dist.shape[0])
+    proposal_dist[:, 1] += dy + np.random.normal(loc=0.0, scale=KM_Y_FIX_NOISE+KM_Y_SCALE_NOISE*v_mag, size=proposal_dist.shape[0])
+    proposal_dist[:, 2] += dtheta + np.random.normal(loc=0.0, scale=KM_THETA_FIX_NOISE, size=proposal_dist.shape[0])
     
     #print 'Updated particles'
     

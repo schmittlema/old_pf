@@ -12,7 +12,7 @@ import utils as Utils
 from sensor_msgs.msg import LaserScan
 
 THETA_DISCRETIZATION = 112 # Discretization of scanning angle
-INV_SQUASH_FACTOR = 2.2    # Factor for helping the weight distribution to be less peaked
+INV_SQUASH_FACTOR = 0.5    # Factor for helping the weight distribution to be less peaked
 
 Z_SHORT = 0.01  # Weight for short reading
 Z_MAX = 0.07    # Weight for max reading

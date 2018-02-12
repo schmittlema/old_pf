@@ -10,6 +10,7 @@ from threading import Lock
 
 from vesc_msgs.msg import VescStateStamped
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetMap
 from geometry_msgs.msg import PoseStamped, PoseArray, PoseWithCovarianceStamped, PointStamped
 
