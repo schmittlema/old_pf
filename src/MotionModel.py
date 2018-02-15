@@ -73,8 +73,9 @@ class OdometryMotionModel:
     add_rand = 0.05
     proposal_dist[:,0] += np.random.normal(loc=0.0,scale=add_rand,size=proposal_dist.shape[0])
     proposal_dist[:,1] += np.random.normal(loc=0.0,scale=add_rand*0.5,size=proposal_dist.shape[0])
-    proposal_dist[:,2] += np.random.normal(loc=0.0,scale=0.25,size=proposal_dist.shape[0])    
-    
+    proposal_dist[:,2] += np.random.normal(loc=0.0,scale=0.25,size=proposal_dist.shape[0])  
+    proposal_dist[proposal_dist[:,2] < -1*np.pi,2] += 2*np.pi  
+    proposal_dist[proposal_dist[:,2] > np.pi,2] -= 2*np.pi    
 
 class KinematicMotionModel:
 
@@ -163,6 +164,8 @@ class KinematicMotionModel:
     proposal_dist[:, 0] += dx + np.random.normal(loc=0.0, scale=KM_X_FIX_NOISE+KM_X_SCALE_NOISE*v_mag, size=proposal_dist.shape[0])
     proposal_dist[:, 1] += dy + np.random.normal(loc=0.0, scale=KM_Y_FIX_NOISE+KM_Y_SCALE_NOISE*v_mag, size=proposal_dist.shape[0])
     proposal_dist[:, 2] += dtheta + np.random.normal(loc=0.0, scale=KM_THETA_FIX_NOISE, size=proposal_dist.shape[0])
+    proposal_dist[proposal_dist[:,2] < -1*np.pi,2] += 2*np.pi  
+    proposal_dist[proposal_dist[:,2] > np.pi,2] -= 2*np.pi       
     
     #print 'Updated particles'
     

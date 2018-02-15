@@ -19,7 +19,7 @@
 		<param name="motion_model" value="$(arg motion_model)" />
 		<param name="max_range_meters" value="$(arg max_range_meters)" />
     <param name="resample_type" value="$(arg resample_type)" />
-		<param name="max_viz_particles" value="60"/>
+		<param name="max_viz_particles" value="500"/>
 
 	</node>
 </launch>

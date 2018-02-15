@@ -53,6 +53,7 @@ class ParticleFilter():
     self.pub_tf = tf.TransformBroadcaster() # Used to create a tf between the map and the laser for visualization
     self.pub_laser     = rospy.Publisher("/pf/ta/viz/scan", LaserScan, queue_size = 1) # Publishes the most recent laser scan
 
+    self.pub_odom      = rospy.Publisher("/pf/ta/viz/odom", Odometry, queue_size = 1) # Publishes the path of the car
     ''' HACK VIEW INITIAL DISTRIBUTION'''
     '''
     self.MAX_VIZ_PARTICLES = 1000
@@ -130,7 +131,12 @@ class ParticleFilter():
 
   # Returns the expected pose given the current particles and weights
   def expected_pose(self):
-    return np.dot(self.particles.transpose(), self.weights)
+    #print 'min, max, mean = %f, %f, %f'%(np.min(self.particles[:,2]), np.max(self.particles[:,2]), np.mean(self.particles[:,2]))
+    cosines = np.cos(self.particles[:,2])
+    sines = np.sin(self.particles[:,2])
+    theta = np.arctan2(np.dot(sines,self.weights),np.dot(cosines, self.weights))
+    position = np.dot(self.particles[:,0:2].transpose(), self.weights)
+    return np.array((position[0], position[1], theta),dtype=np.float)
     
   # Callback for '/initialpose' topic. RVIZ publishes a message to this topic when you specify an initial pose using its GUI
   # Reinitialize your particles and weights according to the received initial pose
@@ -153,18 +159,24 @@ class ParticleFilter():
   # (4) Publishes a subsample of the particles (use self.MAX_VIZ_PARTICLES). 
   #     Sample so that particles with higher weights are more likely to be sampled.
   def visualize(self):
-    print 'Visualizing...'
+    #print 'Visualizing...'
     self.state_lock.acquire()
     self.inferred_pose = self.expected_pose()
     self.publish_tf(self.inferred_pose, rospy.Time.now())
     
-    if self.pose_pub.get_num_connections() > 0 and isinstance(self.inferred_pose, np.ndarray):
+    if (self.pose_pub.get_num_connections() > 0 or self.pub_odom.get_num_connections() > 0) and isinstance(self.inferred_pose, np.ndarray):
       ps = PoseStamped()
       ps.header = Utils.make_header("map")
       ps.pose.position.x = self.inferred_pose[0]
       ps.pose.position.y = self.inferred_pose[1]
       ps.pose.orientation = Utils.angle_to_quaternion(self.inferred_pose[2])
-      self.pose_pub.publish(ps)
+      if(self.pose_pub.get_num_connections() > 0):
+        self.pose_pub.publish(ps)
+      if(self.pub_odom.get_num_connections() > 0):
+        odom = Odometry()
+        odom.header = ps.header
+        odom.pose.pose = ps.pose
+        self.pub_odom.publish(odom)
 
     if self.particle_pub.get_num_connections() > 0:
       if self.particles.shape[0] > self.MAX_VIZ_PARTICLES:
