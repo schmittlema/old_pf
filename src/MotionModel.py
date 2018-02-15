@@ -8,13 +8,13 @@ from threading import Lock
 from vesc_msgs.msg import VescStateStamped
 import matplotlib.pyplot as plt
 
-KM_V_NOISE = 0.005
-KM_DELTA_NOISE = 0.05
-KM_X_FIX_NOISE = 0.005
-KM_Y_FIX_NOISE = 0.005
-KM_THETA_FIX_NOISE = 0.05
-KM_X_SCALE_NOISE = 0.05
-KM_Y_SCALE_NOISE = 0.05
+KM_V_NOISE = 0.5
+KM_DELTA_NOISE = 0.25
+KM_X_FIX_NOISE = 0.05
+KM_Y_FIX_NOISE = 0.05
+KM_THETA_FIX_NOISE = 0.1
+KM_X_SCALE_NOISE = 0.0
+KM_Y_SCALE_NOISE = 0.0
 
 class OdometryMotionModel:
 
