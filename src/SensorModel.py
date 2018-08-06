@@ -12,12 +12,12 @@ import utils as Utils
 from sensor_msgs.msg import LaserScan
 
 THETA_DISCRETIZATION = 112 # Discretization of scanning angle
-INV_SQUASH_FACTOR = 0.5    # Factor for helping the weight distribution to be less peaked
+INV_SQUASH_FACTOR = 0.2    # Factor for helping the weight distribution to be less peaked
 
 Z_SHORT = 0.01  # Weight for short reading
 Z_MAX = 0.07    # Weight for max reading
 Z_RAND = 0.12   # Weight for random reading
-SIGMA_HIT = 8.0 # Noise value for hit reading
+SIGMA_HIT = 2.0 # Noise value for hit reading
 Z_HIT = 0.75    # Weight for hit reading
 
 class SensorModel:
@@ -32,12 +32,13 @@ class SensorModel:
     self.weights = weights
     
     self.LASER_RAY_STEP = int(rospy.get_param("~laser_ray_step")) # Step for downsampling laser scans
+    self.EXCLUDE_MAX_RANGE_RAYS = bool(rospy.get_param("~exclude_max_range_rays")) # Whether to exclude rays that are beyond the max range
     self.MAX_RANGE_METERS = float(rospy.get_param("~max_range_meters")) # The max range of the laser
     
     oMap = range_libc.PyOMap(map_msg) # A version of the map that range_libc can understand
     max_range_px = int(self.MAX_RANGE_METERS / map_msg.info.resolution) # The max range in pixels of the laser
-    #self.range_method = range_libc.PyCDDTCast(oMap, max_range_px, THETA_DISCRETIZATION) # The range method that will be used for ray casting
-    self.range_method = range_libc.PyRayMarchingGPU(oMap, max_range_px) # The range method that will be used for ray casting
+    self.range_method = range_libc.PyCDDTCast(oMap, max_range_px, THETA_DISCRETIZATION) # The range method that will be used for ray casting
+    #self.range_method = range_libc.PyRayMarchingGPU(oMap, max_range_px) # The range method that will be used for ray casting
     self.range_method.set_sensor_model(self.precompute_sensor_model(max_range_px)) # Load the sensor model expressed as a table
     self.queries = None
     self.ranges = None
@@ -51,15 +52,32 @@ class SensorModel:
     '''
     self.state_lock.acquire()
     #print 'in lidar_cb'
-    if not isinstance(self.laser_angles, np.ndarray):
-        #print 'Creating angles'
-        self.laser_angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
-        self.downsampled_angles = np.copy(self.laser_angles[0::self.LASER_RAY_STEP]).astype(np.float32)
+    
+    if not self.EXCLUDE_MAX_RANGE_RAYS:
+    	if not isinstance(self.laser_angles, np.ndarray):
+            #print 'Creating angles'
+            self.laser_angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
+            self.downsampled_angles = np.copy(self.laser_angles[0::self.LASER_RAY_STEP]).astype(np.float32)
 
-    #print 'Downsampling ranges'
-    self.downsampled_ranges = np.array(msg.ranges[::self.LASER_RAY_STEP])
-    self.downsampled_ranges[np.isnan(self.downsampled_ranges)] = self.MAX_RANGE_METERS
-
+        #print 'Downsampling ranges'
+        self.downsampled_ranges = np.array(msg.ranges[::self.LASER_RAY_STEP])
+        self.downsampled_ranges[np.isnan(self.downsampled_ranges)] = self.MAX_RANGE_METERS
+    else:    
+        if not isinstance(self.laser_angles, np.ndarray):
+            self.laser_angles = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))    
+        ranges = np.array(msg.ranges)
+        ranges[np.isnan(ranges)] = self.MAX_RANGE_METERS
+        valid_indices = np.logical_and(ranges > 0.01, ranges < self.MAX_RANGE_METERS)
+        self.filtered_angles = np.copy(self.laser_angles[valid_indices]).astype(np.float32)
+        self.filtered_ranges = np.copy(ranges[valid_indices]).astype(np.float32)
+    
+        ray_count = int(self.laser_angles.shape[0]/self.LASER_RAY_STEP)
+        sample_indices = np.arange(0,self.filtered_angles.shape[0],float(self.filtered_angles.shape[0])/ray_count).astype(np.int)
+        self.downsampled_angles = np.zeros(ray_count+1, dtype=np.float32)
+        self.downsampled_ranges = np.zeros(ray_count+1, dtype=np.float32)
+        self.downsampled_angles[:sample_indices.shape[0]] = np.copy(self.filtered_angles[sample_indices])
+        self.downsampled_ranges[:sample_indices.shape[0]] = np.copy(self.filtered_ranges[sample_indices])
+   
     # Compute the observation
     # obs is a a two element tuple
     # obs[0] is the downsampled ranges
@@ -68,7 +86,7 @@ class SensorModel:
     # Use self.LASER_RAY_STEP as the downsampling step
     # Keep efficiency in mind, including by caching certain things that won't change across future iterations of this callback
     #print 'Forming observations'
-    obs = (np.copy(self.downsampled_ranges).astype(np.float32), self.downsampled_angles) 
+    obs = (np.copy(self.downsampled_ranges).astype(np.float32), self.downsampled_angles.astype(np.float32)) 
 
         
     self.apply_sensor_model(self.particles, obs, self.weights)

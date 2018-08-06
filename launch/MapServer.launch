@@ -1,4 +1,4 @@
 <launch>
-    <arg name="map" default="$(find ta_lab1)/maps/gates.yaml"/>
+    <arg name="map" default="$(find ta_lab1)/maps/real-floor0.yaml"/>
     <node pkg="map_server" name="map_server" type="map_server" args="$(arg map)" />
 </launch>

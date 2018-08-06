@@ -8,11 +8,11 @@ from threading import Lock
 from vesc_msgs.msg import VescStateStamped
 import matplotlib.pyplot as plt
 
-KM_V_NOISE = 0.5
-KM_DELTA_NOISE = 0.25
-KM_X_FIX_NOISE = 0.05
-KM_Y_FIX_NOISE = 0.05
-KM_THETA_FIX_NOISE = 0.1
+KM_V_NOISE = 0.03
+KM_DELTA_NOISE = 0.1
+KM_X_FIX_NOISE = 0.01
+KM_Y_FIX_NOISE = 0.01
+KM_THETA_FIX_NOISE = 0.05
 KM_X_SCALE_NOISE = 0.0
 KM_Y_SCALE_NOISE = 0.0
 
@@ -43,7 +43,7 @@ class OdometryMotionModel:
 		  # changes in x,y,theta in local coordinate system of the car
       control = np.array([local_delta[0,0], local_delta[0,1], orientation - self.last_pose[2]])
       self.apply_motion_model(self.particles, control)
-
+    
     self.last_pose = pose
     self.state_lock.release()
     
@@ -118,10 +118,16 @@ class KinematicMotionModel:
     # Convert raw msgs to controls
     # Note that control = (raw_msg_val - offset_param) / gain_param
     curr_speed = (msg.state.speed - self.SPEED_TO_ERPM_OFFSET) / self.SPEED_TO_ERPM_GAIN
+    
     curr_steering_angle = (self.last_servo_cmd - self.STEERING_TO_SERVO_OFFSET) / self.STEERING_TO_SERVO_GAIN
     dt = (msg.header.stamp - self.last_vesc_stamp).to_sec()
+
+    before = np.copy(self.particles[0])
     self.apply_motion_model(proposal_dist=self.particles, control=[curr_speed, curr_steering_angle, dt])
-    
+    after = np.copy(self.particles[0])
+    #print '%s %s'%(before,after)
+
+    #print self.particles[0,:]  
     self.last_vesc_stamp = msg.header.stamp    
     self.state_lock.release()
 
@@ -132,7 +138,7 @@ class KinematicMotionModel:
     v, delta, dt = control
     v_mag = abs(v)
     v += np.random.normal(loc=0.0, scale=KM_V_NOISE, size=proposal_dist.shape[0])
-   
+    #print v[0]
     if np.abs(delta) < 1e-2:
         #v += np.random.normal(loc=0.0, scale=0.03, size=proposal_dist.shape[0])
         #delta += np.random.normal(loc=0.0, scale=0.25, size=proposal_dist.shape[0])
@@ -160,7 +166,7 @@ class KinematicMotionModel:
     #dy = v * np.sin(proposal_dist[:, 2]) * dt
     #dtheta = ((v / self.CAR_LENGTH) * sin2beta) * dt  # Scale by dt
     #dtheta = v*(np.tan(delta) / 0.25)* dt
-    
+    #print (dx[0],dy[0],dtheta) 
     proposal_dist[:, 0] += dx + np.random.normal(loc=0.0, scale=KM_X_FIX_NOISE+KM_X_SCALE_NOISE*v_mag, size=proposal_dist.shape[0])
     proposal_dist[:, 1] += dy + np.random.normal(loc=0.0, scale=KM_Y_FIX_NOISE+KM_Y_SCALE_NOISE*v_mag, size=proposal_dist.shape[0])
     proposal_dist[:, 2] += dtheta + np.random.normal(loc=0.0, scale=KM_THETA_FIX_NOISE, size=proposal_dist.shape[0])

@@ -30,6 +30,8 @@ class ParticleFilter():
     self.weights = np.ones(self.MAX_PARTICLES) / float(self.MAX_PARTICLES) # Numpy matrix containig weight for each particle
 
     self.state_lock = Lock() # A lock used to prevent concurrency issues. You do not need to worry about this
+    
+    self.tfl = tf.TransformListener()
 
     # Use the 'static_map' service (launched by MapServer.launch) to get the map
     map_service_name = rospy.get_param("~static_map", "static_map")
@@ -121,13 +123,39 @@ class ParticleFilter():
   
   # Publish a tf between the laser and the map
   # This is necessary in order to visualize the laser scan within the map
-  def publish_tf(self,pose, stamp=None):
+  def publish_tf(self,pose,stamp=None):
     """ Publish a tf for the car. This tells ROS where the car is with respect to the map. """
-    if stamp == None:
-      stamp = rospy.Time.now()
+    if stamp is None:
+        stamp = rospy.Time.now()
+    try:
+        delta_off, delta_rot = self.tfl.lookupTransform("/laser","/odom",rospy.Time(0))
+	#print'%s %s'%(str(delta_off), str(delta_rot))
+        off_x = delta_off[0]*np.cos(pose[2]) - delta_off[1]*np.sin(pose[2])
+        off_y = delta_off[0]*np.sin(pose[2]) + delta_off[1]*np.cos(pose[2])
 
-    self.pub_tf.sendTransform((pose[0],pose[1],0),tf.transformations.quaternion_from_euler(0, 0, pose[2]), 
-               stamp , "/ta_laser", "/map")
+        delta_yaw = 0.0#pose[2]#tf.transformations.euler_from_quaternion(delta_rot)[2]
+
+	rot_x = off_x*np.cos(delta_yaw)-off_y*np.sin(delta_yaw)
+        rot_y = off_x*np.sin(delta_yaw)+off_y*np.cos(delta_yaw)
+
+	self.pub_tf.sendTransform((pose[0]+rot_x,pose[1]+rot_y,0.0),tf.transformations.quaternion_from_euler(0,0,pose[2]+tf.transformations.euler_from_quaternion(delta_rot)[2]),stamp,"/odom","/map")
+        '''
+        map_in_laser = PoseStamped()
+        map_in_laser.header.frame_id = "/laser"
+        map_in_laser.header.stamp = rospy.Time(0)
+	map_in_laser.pose.position.x = -pose[0]
+	map_in_laser.pose.position.y = -pose[1]
+	map_in_laser.pose.position.z = 0.00
+        map_in_laser.pose.orientation =  Utils.angle_to_quaternion(-pose[2])
+	map_in_odom = self.tfl.transformPose("/odom", map_in_laser)
+        self.pub_tf.sendTransform((-map_in_odom.pose.position.x,-map_in_odom.pose.position.y,0.0),tf.transformations.quaternion_from_euler(0,0,-Utils.quaternion_to_angle(map_in_odom.pose.orientation)),stamp,"/odom","/map")      
+        '''
+    	#laser_to_odom = self.tfb.lookup_transform("laser", "odom", rospy.Time(0))
+        #print laser_to_odom
+        #odom_pose = tf2_geometry_msgs.do_transform_pose(pose, laser_to_odom)
+        #self.pub_tf.sendTransform((odom_pose.pose.position.x,odom_pose.pose.position.y,0),(odom_pose.pose.orientation.x,odom_pose.pose.orientation.y,odom_pose.pose.orientation.z,odom_pose.pose.orientation.w), odom_pose.header.stamp , "/odom", "/map")
+    except (tf.LookupException):
+        self.pub_tf.sendTransform((pose[0],pose[1],0),tf.transformations.quaternion_from_euler(0,0,pose[2]), stamp , "/laser", "/map")
 
   # Returns the expected pose given the current particles and weights
   def expected_pose(self):
@@ -162,14 +190,14 @@ class ParticleFilter():
     #print 'Visualizing...'
     self.state_lock.acquire()
     self.inferred_pose = self.expected_pose()
-    self.publish_tf(self.inferred_pose, rospy.Time.now())
-    
-    if (self.pose_pub.get_num_connections() > 0 or self.pub_odom.get_num_connections() > 0) and isinstance(self.inferred_pose, np.ndarray):
+
+    if isinstance(self.inferred_pose, np.ndarray):
+      self.publish_tf(self.inferred_pose)
       ps = PoseStamped()
       ps.header = Utils.make_header("map")
       ps.pose.position.x = self.inferred_pose[0]
       ps.pose.position.y = self.inferred_pose[1]
-      ps.pose.orientation = Utils.angle_to_quaternion(self.inferred_pose[2])
+      ps.pose.orientation = Utils.angle_to_quaternion(self.inferred_pose[2])    
       if(self.pose_pub.get_num_connections() > 0):
         self.pose_pub.publish(ps)
       if(self.pub_odom.get_num_connections() > 0):
@@ -188,7 +216,7 @@ class ParticleFilter():
         self.publish_particles(self.particles)
         
     if self.pub_laser.get_num_connections() > 0 and isinstance(self.sensor_model.last_laser, LaserScan):
-      self.sensor_model.last_laser.header.frame_id = "/ta_laser"
+      self.sensor_model.last_laser.header.frame_id = "/laser"
       self.sensor_model.last_laser.header.stamp = rospy.Time.now()
       self.pub_laser.publish(self.sensor_model.last_laser)
     self.state_lock.release()
