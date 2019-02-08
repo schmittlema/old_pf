@@ -1,7 +1,7 @@
 
 <launch>
 
-	<include file="$(find ta_lab1)/launch/MapServer.launch"/>
+	<!-- <include file="$(find ta_lab1)/launch/MapServer.launch"/> -->
 
 	<arg name="scan_topic" default="/scan"/>
 	<arg name="odometry_topic" default="/vesc/odom"/>
@@ -9,7 +9,7 @@
 	<arg name="exclude_max_range_rays" default="true"/>
 	<arg name="max_particles" default="4000"/>
 	<arg name="motion_model" default="kinematic" />
-	<arg name="max_range_meters" default="11.0" />
+	<arg name="max_range_meters" default="16.0" />
 	<arg name="resample_type" default="naiive" />
 	
 	<node pkg="ta_lab1" type="ParticleFilter.py" name="Particle_filter" output="screen">

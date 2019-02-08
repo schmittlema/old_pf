@@ -87,7 +87,7 @@ class KinematicMotionModel:
     self.SPEED_TO_ERPM_GAIN   = float(rospy.get_param("/vesc/speed_to_erpm_gain",4614.0 ))   # Gain conversion param from rpm to speed
     self.STEERING_TO_SERVO_OFFSET = float(rospy.get_param("/vesc/steering_angle_to_servo_offset", 0.5304)) # Offset conversion param from servo position to steering angle
     self.STEERING_TO_SERVO_GAIN   = float(rospy.get_param("/vesc/steering_angle_to_servo_gain",-1.2135)) # Gain conversion param from servo position to steering angle
-    self.CAR_LENGTH = 0.33 
+    self.CAR_LENGTH = 0.29
     if state_lock is None:
       self.state_lock = Lock()
     else:
